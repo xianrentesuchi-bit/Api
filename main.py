@@ -1,14 +1,26 @@
 import os
+import requests
 import yt_dlp
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
 app = FastAPI(title="Xvideos Stream Linker")
 
-# 環境変数からプロキシを取得。設定されていなければ元のプロキシをデフォルトにする
-PROXY_URL = os.getenv(
-    "PROXY_URL", "http://ytproxy-siawaseok.duckdns.org:3007"
-)
+
+def get_working_proxy():
+    """無料のプロキシリストから、今動いているものを1つ取得する"""
+    try:
+        # 無料プロキシのAPIからリストを取得
+        response = requests.get(
+            "https://pubproxy.com/api/proxy?limit=1&format=txt&http=true&country=US,JP,DE"
+        )
+        if response.status_code == 200 and response.text.strip():
+            proxy = f"http://{response.text.strip()}"
+            return proxy
+    except Exception:
+        pass
+    # 取得に失敗した場合は、Renderの生IPで試すためにNoneを返す
+    return None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -33,14 +45,20 @@ def index():
 
 @app.get("/get_stream")
 def get_stream(url: str = Query(..., description="Xvideosの動画URL")):
+    # 動いているプロキシをその場で取得
+    dynamic_proxy = get_working_proxy()
+
     # yt-dlpのオプション設定
     ydl_opts = {
         "simulate": True,  # 動画本体はダウンロードしない
         "quiet": True,  # ログ出力を抑制
         "format": "best",  # 最高画質を選択
-        "proxy": PROXY_URL,  # 指定されたプロキシを使用
         "no_warnings": True,
     }
+
+    # プロキシが見つかった場合のみ設定に追加
+    if dynamic_proxy:
+        ydl_opts["proxy"] = dynamic_proxy
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -61,10 +79,12 @@ def get_stream(url: str = Query(..., description="Xvideosの動画URL")):
                 "title": info.get("title"),
                 "duration": info.get("duration"),
                 "stream_url": stream_url,
+                "used_proxy": dynamic_proxy
+                or "None (Direct)",  # どのプロキシを使ったかデバッグ用
             }
 
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"yt-dlpでの解析に失敗しました。プロキシが落ちているか、URLが不正な可能性があります。エラー: {str(e)}",
+            detail=f"yt-dlpでの解析に失敗しました。使用プロキシ: {dynamic_proxy} エラー: {str(e)}",
         )
