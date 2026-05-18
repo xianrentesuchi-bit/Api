@@ -5,8 +5,10 @@ from fastapi.responses import HTMLResponse
 
 app = FastAPI(title="Xvideos Stream Linker")
 
-# 提供されたプロキシ
-PROXY_URL = "http://ytproxy-siawaseok.duckdns.org:3007"
+# 環境変数からプロキシを取得。設定されていなければ元のプロキシをデフォルトにする
+PROXY_URL = os.getenv(
+    "PROXY_URL", "http://ytproxy-siawaseok.duckdns.org:3007"
+)
 
 
 @app.get("/", response_class=HTMLResponse)
